@@ -8,21 +8,23 @@ This is an [Agent Skill](https://agentskills.io) for SP3ND, a decentralized e-co
 
 ## Install
 
-### Via Vercel Skills CLI (recommended)
-
 ```bash
-npx @anthropic-ai/skills install https://sp3nd.shop
+npx skills add kent-x1/sp3nd-agent-skill
 ```
+
+This installs the SP3ND skill to all supported agents on your machine. The CLI will auto-detect which agents you have and let you choose where to install.
 
 ### Manual install for Claude Code
 
 ```bash
+mkdir -p ~/.claude/skills/sp3nd
 cp SKILL.md ~/.claude/skills/sp3nd/SKILL.md
 ```
 
 ### Manual install for OpenAI Codex
 
 ```bash
+mkdir -p ~/.codex/skills/sp3nd
 cp SKILL.md ~/.codex/skills/sp3nd/SKILL.md
 ```
 
@@ -33,9 +35,9 @@ mkdir -p .github/skills/sp3nd
 cp SKILL.md .github/skills/sp3nd/SKILL.md
 ```
 
-## Compatible Platforms
+## Compatible Agents
 
-This skill works with any agent that supports the [Agent Skills](https://agentskills.io) standard:
+This skill works with any agent that supports the [Agent Skills](https://agentskills.io) standard, including:
 
 - Claude Code / Claude.ai (Anthropic)
 - ChatGPT / Codex CLI (OpenAI)
@@ -44,15 +46,7 @@ This skill works with any agent that supports the [Agent Skills](https://agentsk
 - Windsurf
 - Goose (Block)
 - Gemini CLI (Google)
-- Roo Code, Trae, Amp, and more
-
-## Web Discovery
-
-This skill is also available via web discovery:
-
-- **Skills path:** `https://sp3nd.shop/.well-known/skills/default/skill.md`
-- **Convenience path:** `https://sp3nd.shop/skill.md`
-- **Agent card (A2A):** `https://sp3nd.shop/.well-known/agent-card.json`
+- Amp, Cline, Roo Code, Trae, and 30+ more
 
 ## What Agents Can Do
 
@@ -72,6 +66,13 @@ This skill is also available via web discovery:
 | KYC | None required |
 | Countries | 200+ |
 | Amazon marketplaces | 22 |
+
+## Web Discovery
+
+This skill is also available via web discovery:
+
+- **Agent card (A2A):** `https://sp3nd.shop/.well-known/agent-card.json`
+- **Skill file:** `https://sp3nd.shop/skill.md`
 
 ## Links
 
