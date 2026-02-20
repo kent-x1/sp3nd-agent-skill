@@ -1,0 +1,12 @@
+{
+  "slug": "sp3nd",
+  "name": "SP3ND — Buy from Amazon with USDC",
+  "description": "Buy products from Amazon using USDC on Solana. 0% platform fee, no KYC, free Prime shipping, 200+ countries, fully autonomous via x402 payment protocol.",
+  "version": "1.0.0",
+  "tags": ["solana", "usdc", "amazon", "x402", "shopping", "ecommerce", "payments", "crypto"],
+  "skill": "SKILL.md",
+  "homepage": "https://sp3nd.shop",
+  "repository": "https://github.com/kent-x1/sp3nd-agent-skill",
+  "documentation": "https://sp3nd.shop/skill.md",
+  "license": "Apache-2.0"
+}
