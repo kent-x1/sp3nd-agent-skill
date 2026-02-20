@@ -1,0 +1,33 @@
+name: Publish to ClawHub
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'SKILL.md'
+      - 'agent-card.json'
+      - 'README.md'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install ClawHub CLI
+        run: npm install -g clawhub
+
+      - name: Publish skill
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          clawhub login --token "$CLAWHUB_TOKEN" --no-browser
+          clawhub publish . \
+            --slug sp3nd \
+            --name "SP3ND — Buy from Amazon with USDC" \
+            --version $(node -p "require('./agent-card.json').version") \
+            --tags "latest,solana,usdc,amazon,x402,shopping,ecommerce"
