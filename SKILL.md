@@ -185,45 +185,68 @@ X-API-Secret: <api_secret>
 
 **Response: HTTP 402 Payment Required**
 
+The payment requirements are returned in the `PAYMENT-REQUIRED` HTTP header as a base64-encoded JSON object (not in the response body). Decode it to get:
+
 ```json
 {
-  "status": "payment_required",
-  "message": "Payment of $30.74 USDC required to complete order ORD-1234567890",
-  "paymentRequirements": {
-    "x402Version": 2,
-    "scheme": "exact",
-    "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-    "accepting": [{
-      "maxAmountRequired": "30740000",
-      "payTo": "2nkTRv3qxk7n2eYYjFAndReVXaV7sTF3Z9pNimvp5jcp",
-      "asset": {
-        "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-        "decimals": 6,
-        "symbol": "USDC"
-      }
-    }]
-  },
-  "amount": 30.74,
-  "currency": "USDC",
-  "pay_to": "2nkTRv3qxk7n2eYYjFAndReVXaV7sTF3Z9pNimvp5jcp"
+  "x402Version": 1,
+  "scheme": "exact",
+  "network": "solana",
+  "resource": "https://us-central1-sp3nddotshop-prod.cloudfunctions.net/payAgentOrder",
+  "accepts": [{
+    "maxAmountRequired": "30740000",
+    "amount": "30740000",
+    "payTo": "2nkTRv3qxk7n2eYYjFAndReVXaV7sTF3Z9pNimvp5jcp",
+    "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "maxTimeoutSeconds": 300,
+    "extra": {
+      "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4",
+      "order_number": "ORD-1234567890"
+    }
+  }]
 }
 ```
 
-**Your x402 client automatically:**
+> **Important details:**
+> - `extra.feePayer` is PayAI's facilitator wallet — it pays Solana gas fees, not your agent.
+> - `extra.order_number` is used to build the required memo instruction.
+> - `asset` is the USDC mint address as a flat string (not an object).
+> - `x402Version` must be `1` with `network: "solana"` (not CAIP-2 format). PayAI does not yet support v2 for Solana.
 
-1. Reads the 402 response
-2. Creates a USDC transfer transaction on Solana
-3. Signs it with your agent's keypair
-4. Retries the request with a `PAYMENT-SIGNATURE` header
+> **Memo Requirement:** The USDC transfer transaction **must** include a Solana Memo program instruction with the value `SP3ND Order: <order_number>` (e.g. `SP3ND Order: ORD-1234567890`). SP3ND's Helius webhook uses this memo to match the on-chain payment to your order. Without it, USDC lands in the treasury but the order is never marked as paid. **Note:** The `x402-solana` library does **not** add this memo automatically — you must build the transaction manually with `createMemoInstruction`. See the code example below.
+
+**Your agent must:**
+
+1. Read the `PAYMENT-REQUIRED` header from the 402 response and base64-decode it
+2. Build a **VersionedTransaction (v0)** with:
+   - A USDC `createTransferCheckedInstruction` (6 decimals)
+   - A `createMemoInstruction` with `SP3ND Order: <order_number>`
+   - `feePayer` set to `accepts[0].extra.feePayer` (PayAI's wallet — **not** your agent)
+3. Sign with your agent's keypair (`tx.sign([keypair])`)
+4. Build an x402 v1 payment payload and call the facilitator's `/verify` then `/settle` endpoints
+5. Retry the request with the `PAYMENT-SIGNATURE` header
 
 **Second call (with payment):**
+
+The `PAYMENT-SIGNATURE` header value is a base64-encoded JSON string with the x402 v1 payload format:
+
+```json
+{
+  "x402Version": 1,
+  "scheme": "exact",
+  "network": "solana",
+  "payload": {
+    "transaction": "<base64-encoded-serialized-VersionedTransaction>"
+  }
+}
+```
 
 ```http
 POST /payAgentOrder
 Content-Type: application/json
 X-API-Key: <api_key>
 X-API-Secret: <api_secret>
-PAYMENT-SIGNATURE: <base64-encoded-signed-transaction>
+PAYMENT-SIGNATURE: <base64(JSON.stringify(x402_v1_payload))>
 
 {
   "order_id": "<order_id>",
@@ -378,93 +401,130 @@ Every order placed through SP3ND earns **SP3ND points**. These points are tracke
 
 ---
 
-## Complete Code Example (Node.js with x402)
+## Complete Code Example (Node.js)
+
+> **Proven working on mainnet.** See `scripts/x402-pay-with-memo.mjs` for the full standalone script.
 
 ```javascript
-// Install: npm install x402-solana @solana/web3.js
-import { Keypair } from '@solana/web3.js';
+// Install: npm install @solana/web3.js @solana/spl-token @solana/spl-memo
+import {
+  Connection, Keypair, PublicKey,
+  TransactionMessage, VersionedTransaction, ComputeBudgetProgram
+} from '@solana/web3.js';
+import { getAssociatedTokenAddress, createTransferCheckedInstruction } from '@solana/spl-token';
+import { createMemoInstruction } from '@solana/spl-memo';
 
-const BASE_URL = 'https://us-central1-sp3nddotshop-prod.cloudfunctions.net';
+const BASE_URL    = 'https://us-central1-sp3nddotshop-prod.cloudfunctions.net';
+const FACILITATOR = 'https://facilitator.payai.network';
+const USDC_MINT   = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
 
 // Your agent's credentials (from registerAgent)
-const API_KEY = process.env.SP3ND_API_KEY;
+const API_KEY    = process.env.SP3ND_API_KEY;
 const API_SECRET = process.env.SP3ND_API_SECRET;
 
 // Your agent's Solana keypair (must hold USDC)
-const agentKeypair = Keypair.fromSecretKey(
+const keypair = Keypair.fromSecretKey(
   Uint8Array.from(JSON.parse(process.env.SOLANA_PRIVATE_KEY))
 );
 
-const headers = {
-  'Content-Type': 'application/json',
-  'X-API-Key': API_KEY,
-  'X-API-Secret': API_SECRET,
-};
+const connection = new Connection(process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com');
+const headers = { 'Content-Type': 'application/json', 'X-API-Key': API_KEY, 'X-API-Secret': API_SECRET };
 
-async function buyFromAmazon(productId, productTitle, productUrl, price, quantity, customerEmail, shippingAddress) {
+async function buyFromAmazon(productUrl, quantity, customerEmail, shippingAddress) {
   // 1. Create cart
   const cartRes = await fetch(`${BASE_URL}/createPartnerCart`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      items: [{ product_id: productId, product_title: productTitle, product_url: productUrl, quantity, price }]
-    })
+    method: 'POST', headers,
+    body: JSON.stringify({ items: [{ product_url: productUrl, quantity }] })
   });
   const cart = await cartRes.json();
 
   // 2. Create order
   const orderRes = await fetch(`${BASE_URL}/createPartnerOrder`, {
-    method: 'POST',
-    headers,
+    method: 'POST', headers,
     body: JSON.stringify({
       cart_id: cart.cart.cart_id,
       customer_email: customerEmail,
       shipping_address: shippingAddress
     })
   });
-  const order = await orderRes.json();
+  const order = (await orderRes.json()).order;
 
-  // 3. Pay via x402 — first call gets 402 with payment requirements
-  const payRes = await fetch(`${BASE_URL}/payAgentOrder`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      order_id: order.order.order_id,
-      order_number: order.order.order_number
-    })
+  // 3. First call to payAgentOrder — returns 402 with PAYMENT-REQUIRED header
+  const firstRes = await fetch(`${BASE_URL}/payAgentOrder`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ order_id: order.order_id, order_number: order.order_number })
   });
 
-  if (payRes.status === 402) {
-    const requirements = await payRes.json();
+  if (firstRes.status !== 402) return await firstRes.json();
 
-    // Build and sign USDC transfer transaction
-    // Your x402 client library handles this automatically
-    // See: https://www.npmjs.com/package/x402-solana
-    const paymentPayload = await buildAndSignPayment(
-      agentKeypair,
-      requirements.paymentRequirements,
-      requirements.amount
-    );
+  // 4. Decode payment requirements from PAYMENT-REQUIRED header
+  const paymentRequiredHeader = firstRes.headers.get('PAYMENT-REQUIRED');
+  const paymentRequired = JSON.parse(Buffer.from(paymentRequiredHeader, 'base64').toString('utf8'));
+  const req = paymentRequired.accepts[0];
 
-    // 4. Retry with signed payment
-    const paidRes = await fetch(`${BASE_URL}/payAgentOrder`, {
-      method: 'POST',
-      headers: {
-        ...headers,
-        'PAYMENT-SIGNATURE': Buffer.from(JSON.stringify(paymentPayload)).toString('base64'),
-      },
-      body: JSON.stringify({
-        order_id: order.order.order_id,
-        order_number: order.order.order_number
-      })
-    });
+  // 5. Build VersionedTransaction with USDC transfer + memo
+  const payTo     = new PublicKey(req.payTo);
+  const feePayer  = new PublicKey(req.extra.feePayer);  // PayAI pays gas — NOT your agent
+  const amount    = BigInt(req.maxAmountRequired);
+  const sourceATA = await getAssociatedTokenAddress(USDC_MINT, keypair.publicKey);
+  const destATA   = await getAssociatedTokenAddress(USDC_MINT, payTo);
+  const { blockhash } = await connection.getLatestBlockhash();
 
-    const result = await paidRes.json();
-    console.log('Order paid!', result.transaction_signature);
-    return result;
-  }
+  const instructions = [
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 30000 }),
+    ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1 }),
+    createTransferCheckedInstruction(sourceATA, USDC_MINT, destATA, keypair.publicKey, amount, 6),
+    createMemoInstruction(`SP3ND Order: ${req.extra.order_number}`),  // REQUIRED for payment matching
+  ];
 
-  return await payRes.json(); // Already paid or error
+  const message = new TransactionMessage({ payerKey: feePayer, recentBlockhash: blockhash, instructions });
+  const tx = new VersionedTransaction(message.compileToV0Message());
+  tx.sign([keypair]);
+
+  // 6. Build x402 v1 payment payload
+  const base64Tx = Buffer.from(tx.serialize()).toString('base64');
+  const v1Payload = {
+    x402Version: 1, scheme: 'exact', network: 'solana',
+    payload: { transaction: base64Tx }
+  };
+  const v1Req = {
+    scheme: 'exact', network: 'solana',
+    maxAmountRequired: req.maxAmountRequired,
+    amount: req.maxAmountRequired,
+    resource: req.resource,
+    payTo: req.payTo,
+    maxTimeoutSeconds: req.maxTimeoutSeconds,
+    asset: req.asset,
+    extra: req.extra,
+  };
+
+  // 7. Verify with facilitator
+  const verifyRes = await fetch(`${FACILITATOR}/verify`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paymentPayload: v1Payload, paymentRequirements: v1Req })
+  });
+  const verified = await verifyRes.json();
+  if (!verified.isValid) throw new Error(`Verify failed: ${verified.invalidReason}`);
+
+  // 8. Settle with facilitator (broadcasts tx to Solana)
+  const settleRes = await fetch(`${FACILITATOR}/settle`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paymentPayload: v1Payload, paymentRequirements: v1Req })
+  });
+  const settled = await settleRes.json();
+  if (!settled.success) throw new Error(`Settle failed: ${settled.errorReason}`);
+
+  // 9. Notify SP3ND backend with PAYMENT-SIGNATURE header
+  const paymentHeader = Buffer.from(JSON.stringify(v1Payload)).toString('base64');
+  const paidRes = await fetch(`${BASE_URL}/payAgentOrder`, {
+    method: 'POST',
+    headers: { ...headers, 'PAYMENT-SIGNATURE': paymentHeader },
+    body: JSON.stringify({ order_id: order.order_id, order_number: order.order_number })
+  });
+
+  const result = await paidRes.json();
+  console.log('Order paid!', settled.transaction);
+  return result;
 }
 ```
 

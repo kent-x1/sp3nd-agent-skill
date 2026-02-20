@@ -1,0 +1,14 @@
+# Environment secrets
+.env
+.env.local
+.env.*.local
+
+# Wallet keys
+*.wallet.json
+.volt-wallet.json
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
