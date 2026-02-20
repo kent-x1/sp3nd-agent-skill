@@ -224,52 +224,32 @@ The payment requirements are returned in the `PAYMENT-REQUIRED` HTTP header as a
    - `feePayer` set to `accepts[0].extra.feePayer` (PayAI's wallet — **not** your agent)
 3. Sign with your agent's keypair (`tx.sign([keypair])`)
 4. Build an x402 v1 payment payload and call the facilitator's `/verify` then `/settle` endpoints
-5. Retry the request with the `PAYMENT-SIGNATURE` header
+5. Poll `GET /getPartnerOrders` until the order status is `Paid` (typically within 60 seconds)
 
-**Second call (with payment):**
+**Payment confirmation:**
 
-The `PAYMENT-SIGNATURE` header value is a base64-encoded JSON string with the x402 v1 payload format:
-
-```json
-{
-  "x402Version": 1,
-  "scheme": "exact",
-  "network": "solana",
-  "payload": {
-    "transaction": "<base64-encoded-serialized-VersionedTransaction>"
-  }
-}
-```
+After the facilitator settles the transaction on-chain, SP3ND's Helius webhook detects the USDC transfer + memo and marks the order as paid. Your agent confirms by polling:
 
 ```http
-POST /payAgentOrder
-Content-Type: application/json
+GET /getPartnerOrders
 X-API-Key: <api_key>
 X-API-Secret: <api_secret>
-PAYMENT-SIGNATURE: <base64(JSON.stringify(x402_v1_payload))>
-
-{
-  "order_id": "<order_id>",
-  "order_number": "<order_number>"
-}
 ```
 
-**Response: HTTP 200 OK**
+Poll every ~5 seconds. When the order's `status` changes to `Paid`, you're done:
 
 ```json
 {
-  "success": true,
-  "status": "paid",
-  "message": "Order ORD-1234567890 payment confirmed via x402",
-  "order_id": "...",
   "order_number": "ORD-1234567890",
-  "transaction_signature": "5xYz...abc",
-  "amount": 30.74,
-  "currency": "USDC"
+  "status": "Paid",
+  "total_amount": 30.74,
+  "transaction_signature": "5xYz...abc"
 }
 ```
 
 The order is now paid. SP3ND purchases the product from Amazon and ships it.
+
+> **Why polling instead of a second `payAgentOrder` call?** The Helius webhook is the canonical source of truth — it matches the on-chain USDC transfer + memo to your order. Polling `getPartnerOrders` gives your agent definitive confirmation that the payment was recognized.
 
 ---
 
@@ -514,17 +494,24 @@ async function buyFromAmazon(productUrl, quantity, customerEmail, shippingAddres
   const settled = await settleRes.json();
   if (!settled.success) throw new Error(`Settle failed: ${settled.errorReason}`);
 
-  // 9. Notify SP3ND backend with PAYMENT-SIGNATURE header
-  const paymentHeader = Buffer.from(JSON.stringify(v1Payload)).toString('base64');
-  const paidRes = await fetch(`${BASE_URL}/payAgentOrder`, {
-    method: 'POST',
-    headers: { ...headers, 'PAYMENT-SIGNATURE': paymentHeader },
-    body: JSON.stringify({ order_id: order.order_id, order_number: order.order_number })
-  });
+  // 9. Poll for payment confirmation (Helius webhook marks order paid within ~60s)
+  const ORDER_TIMEOUT_MS = 90_000;
+  const POLL_INTERVAL_MS = 5_000;
+  const deadline = Date.now() + ORDER_TIMEOUT_MS;
 
-  const result = await paidRes.json();
-  console.log('Order paid!', settled.transaction);
-  return result;
+  console.log('Waiting for payment confirmation...');
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+    const statusRes = await fetch(`${BASE_URL}/getPartnerOrders`, { headers });
+    const { orders } = await statusRes.json();
+    const thisOrder = orders.find(o => o.order_number === order.order_number);
+    if (thisOrder?.status === 'Paid') {
+      console.log('Order paid! ✅', settled.transaction);
+      return thisOrder;
+    }
+    console.log('  Status:', thisOrder?.status, '— checking again...');
+  }
+  throw new Error('Payment timeout — USDC transferred on-chain, Helius may still be processing');
 }
 ```
 
