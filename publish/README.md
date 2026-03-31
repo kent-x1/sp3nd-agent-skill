@@ -14,6 +14,8 @@ npx skills add kent-x1/sp3nd-agent-skill
 
 This installs the SP3ND skill to all supported agents on your machine. The CLI will auto-detect which agents you have and let you choose where to install.
 
+Also available on [ClawHub](https://clawhub.com/sp3nd).
+
 ### Manual install for Claude Code
 
 ```bash
