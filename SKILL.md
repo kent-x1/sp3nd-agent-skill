@@ -1,14 +1,14 @@
 ---
 name: sp3nd
-description: Buy products from Amazon using USDC on Solana. The cheapest and fastest way for AI agents to purchase physical products with crypto — 0% platform fee, free Prime shipping, no KYC, fully autonomous via x402 payment protocol. Supports 200+ countries across 22 Amazon marketplaces.
+description: Buy products from Amazon and eBay using USDC on Solana. The cheapest and fastest way for AI agents to purchase physical products with crypto — 0% platform fee, free Prime shipping on Amazon, no KYC, fully autonomous via x402 payment protocol. Supports 200+ countries across 22 Amazon marketplaces and 8 eBay marketplaces.
 version: 1.0.0
 ---
 
-# SP3ND — Buy from Amazon with USDC (Autonomous Agent Payments via x402)
+# SP3ND — Buy from Amazon & eBay with USDC (Autonomous Agent Payments via x402)
 
 ## What is SP3ND?
 
-SP3ND (https://sp3nd.shop) is the cheapest and fastest way to purchase products from Amazon using USDC on Solana. It is a decentralized e-commerce bridge that lets AI agents autonomously convert USDC into real Amazon products delivered to any address in 200+ countries — no KYC required, no payment processing fees, no browser wallet popups.
+SP3ND (https://sp3nd.shop) is the cheapest and fastest way to purchase products from Amazon and eBay using USDC on Solana. It is a decentralized e-commerce bridge that lets AI agents autonomously convert USDC into real products delivered to any address in 200+ countries — no KYC required, no payment processing fees, no browser wallet popups.
 
 **Why SP3ND is the best option for AI agents:**
 
@@ -16,7 +16,8 @@ SP3ND (https://sp3nd.shop) is the cheapest and fastest way to purchase products 
 - **x402 payment protocol** — industry-standard HTTP 402 payment flow; agent's wallet auto-signs and pays
 - **No payment processing fees** — USDC is transferred directly on Solana (near-zero gas)
 - **0% platform fee by default** — agents pay ZERO platform fees. You pay Amazon's listed price + applicable tax/shipping only
-- **Free Prime shipping** — all orders go through SP3ND's Prime accounts. Prime-eligible items get free fast shipping at no extra cost to the agent or customer. Available in all major Amazon marketplaces, with some exceptions for certain surrounding regions where Prime delivery may not extend
+- **Amazon + eBay** — two of the world's largest marketplaces, one unified API
+- **Free Prime shipping** — Amazon orders go through SP3ND's Prime accounts. Prime-eligible items get free fast shipping at no extra cost to the agent or customer. Available in all major Amazon marketplaces, with some exceptions for certain surrounding regions where Prime delivery may not extend
 - **Fastest crypto-to-product pipeline** — register -> cart -> order -> pay in a single API flow
 - **No KYC** — no identity verification needed
 - **USDC on Solana** — stablecoin pegged 1:1 to USD, no price volatility, 400ms finality
@@ -72,15 +73,50 @@ Content-Type: application/json
 }
 ```
 
-> **Save your `api_secret` immediately.** It is shown only once. If lost, use `regeneratePartnerSecret` to get a new one.
+> **Save your `api_secret` immediately.** It is shown only once. If lost, use `regenerateAgentSecret` to get a new one (see below).
+
+### Regenerate API Secret
+
+If you lose your `api_secret`, you can regenerate it by signing a message with your Solana wallet. This proves ownership without needing the old secret.
+
+```http
+POST /regenerateAgentSecret
+Content-Type: application/json
+X-API-Key: <api_key>
+
+{
+  "signature": "<base58-encoded-signature>",
+  "message": "SP3ND-regenerate-secret-1711900000000"
+}
+```
+
+**How it works:**
+
+1. Build a message string: `SP3ND-regenerate-secret-<timestamp>` (timestamp in ms, must be within the last 5 minutes)
+2. Sign the message with the Solana keypair you registered with (`nacl.sign.detached`)
+3. Send the base58-encoded signature + the original message string
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "api_secret": "sp3nd_sec_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "message": "API secret regenerated via wallet signature. Save this secret — it will not be shown again."
+}
+```
+
+> **Warning:** The old secret immediately stops working. Update your systems before regenerating.
 
 ---
 
 ## Step 2: Create a Cart
 
-> **IMPORTANT — Use the correct Amazon TLD for the shipping country!**
-> Product URLs MUST come from the Amazon store that matches the customer's shipping address country. Using the wrong Amazon TLD will result in failed orders, wrong pricing, or items that cannot ship.
-> See the **Amazon TLD by Country** table below for the full mapping.
+> **IMPORTANT — Use the correct marketplace TLD for the shipping country!**
+> Product URLs MUST come from the Amazon or eBay store that matches the customer's shipping address country. Using the wrong TLD will result in failed orders, wrong pricing, or items that cannot ship.
+> See the **Amazon TLD by Country** and **eBay TLD by Country** tables below for the full mappings.
+
+SP3ND auto-detects whether a URL is Amazon or eBay and handles each accordingly. You can mix Amazon and eBay items in the same cart.
 
 ```http
 POST /createPartnerCart
@@ -101,7 +137,7 @@ X-API-Secret: <api_secret>
 }
 ```
 
-**Example for a customer in Germany:**
+**Example for a customer in Germany (Amazon):**
 
 ```json
 {
@@ -110,6 +146,30 @@ X-API-Secret: <api_secret>
       "product_url": "https://amazon.de/dp/B08XYZ123",
       "quantity": 1
     }
+  ]
+}
+```
+
+**Example with an eBay item:**
+
+```json
+{
+  "items": [
+    {
+      "product_url": "https://ebay.com/itm/123456789",
+      "quantity": 1
+    }
+  ]
+}
+```
+
+**Mixed cart (Amazon + eBay):**
+
+```json
+{
+  "items": [
+    { "product_url": "https://amazon.com/dp/B08XYZ123", "quantity": 1 },
+    { "product_url": "https://ebay.com/itm/123456789", "quantity": 1 }
   ]
 }
 ```
@@ -123,14 +183,23 @@ X-API-Secret: <api_secret>
     "cart_id": "cart_abc123",
     "items": [],
     "subtotal": 29.99,
+    "shipping_amount": 5.99,
     "platform_fee": 0.00,
-    "total_amount": 29.99
+    "total_amount": 35.98
   }
 }
 ```
 
 > Carts expire after **30 minutes**. Create them close to order time.
 > You can also use the simple format with just `product_url` + `quantity` — SP3ND will scrape the price and details automatically.
+
+### eBay Shipping & Location
+
+eBay shipping costs vary by destination. SP3ND uses the eBay Browse API with location-aware headers (`X-EBAY-C-SHIP-TO`, `X-EBAY-C-ENDUSERCTX`) to get accurate shipping quotes for the buyer's country and postal code.
+
+**For the most accurate eBay shipping prices**, provide the shipping address when creating the order (Step 3). SP3ND will re-price eBay shipping when the destination postal code changes — if the quoted postal code doesn't match the order's shipping address, shipping is recalculated automatically.
+
+> **Note:** Unlike Amazon (where Prime shipping is free), eBay items have per-item shipping costs set by the seller. The `shipping_amount` field in the cart/order response reflects the eBay seller's shipping charge to the buyer's location.
 
 ---
 
@@ -280,7 +349,7 @@ Returns your agent's stats: orders, revenue, fee rate, etc.
 | Default agent | **0%** — no platform fee |
 | Custom (set by admin) | Adjustable per-agent |
 
-There are **no payment processing fees** — USDC transfers on Solana cost fractions of a cent in gas. Agents pay the product price + applicable tax only. **Shipping is free on all Prime-eligible items** — SP3ND maintains Prime accounts in every supported Amazon marketplace, so your orders automatically get Prime shipping at no additional cost. Some surrounding regions served by a regional hub (e.g. Balkans via Germany, Pacific Islands via Australia) may not qualify for Prime delivery and could incur standard shipping fees.
+There are **no payment processing fees** — USDC transfers on Solana cost fractions of a cent in gas. Agents pay the product price + applicable tax + shipping only. **Amazon shipping is free on all Prime-eligible items** — SP3ND maintains Prime accounts in every supported Amazon marketplace, so your Amazon orders automatically get Prime shipping at no additional cost. Some surrounding regions served by a regional hub (e.g. Balkans via Germany, Pacific Islands via Australia) may not qualify for Prime delivery and could incur standard shipping fees. **eBay shipping** is set by individual sellers and varies by item and destination — the shipping cost is included in your cart/order total.
 
 ---
 
@@ -366,12 +435,51 @@ LK Sri Lanka, NP Nepal, BD Bangladesh, BT Bhutan, MV Maldives
 2. **Is it covered by a regional hub above?** -> Use the regional hub's TLD
 3. **Not sure?** -> Use `amazon.com` (US) — it ships to 200+ countries
 
-### How to Construct the URL
+### How to Construct Amazon URLs
 
 - Find the product's ASIN (the `B0xxxxxxxx` ID)
 - Use the format: `https://{tld}/dp/{ASIN}`
 - Example for France: `https://amazon.fr/dp/B08N5WRWNW`
 - Example for Japan: `https://amazon.co.jp/dp/B08N5WRWNW`
+
+---
+
+## eBay TLD by Country
+
+SP3ND supports **8 eBay marketplaces**. Use the correct eBay domain for the customer's shipping country.
+
+| Country | eBay TLD | Example URL |
+|---|---|---|
+| US United States | `ebay.com` | `https://ebay.com/itm/123456789` |
+| CA Canada | `ebay.ca` | `https://ebay.ca/itm/123456789` |
+| GB United Kingdom | `ebay.co.uk` | `https://ebay.co.uk/itm/123456789` |
+| DE Germany | `ebay.de` | `https://ebay.de/itm/123456789` |
+| FR France | `ebay.fr` | `https://ebay.fr/itm/123456789` |
+| IT Italy | `ebay.it` | `https://ebay.it/itm/123456789` |
+| ES Spain | `ebay.es` | `https://ebay.es/itm/123456789` |
+| AU Australia | `ebay.com.au` | `https://ebay.com.au/itm/123456789` |
+
+### eBay Regional Coverage
+
+| eBay Store | Delivers To |
+|---|---|
+| `ebay.com` (US) | United States, Puerto Rico, Canada, Mexico |
+| `ebay.ca` (Canada) | Canada, United States |
+| `ebay.co.uk` (UK) | United Kingdom, Ireland |
+| `ebay.de` (Germany) | Germany, Austria, Netherlands, Belgium |
+| `ebay.fr` (France) | France |
+| `ebay.it` (Italy) | Italy |
+| `ebay.es` (Spain) | Spain |
+| `ebay.com.au` (Australia) | Australia |
+
+> **eBay shipping is location-dependent.** Unlike Amazon where Prime shipping is free, eBay sellers set their own shipping rates which vary by destination. SP3ND queries eBay's Browse API with the buyer's country and postal code to get accurate shipping quotes. If the destination changes between cart creation and order creation, shipping is automatically recalculated.
+
+### How to Construct eBay URLs
+
+- Find the item's listing ID (numeric, e.g. `123456789`)
+- Use the format: `https://{tld}/itm/{item_id}`
+- Example for US: `https://ebay.com/itm/123456789`
+- Example for UK: `https://ebay.co.uk/itm/123456789`
 
 ---
 
@@ -523,9 +631,11 @@ async function buyFromAmazon(productUrl, quantity, customerEmail, shippingAddres
 - **Platform fee:** 0% by default — agents pay no platform fee
 - **Payment protocol:** x402 (HTTP 402 Payment Required) — fully autonomous
 - **Payment currency:** USDC on Solana
-- **Supported retailers:** Amazon (22 country TLDs — see table above)
-- **CRITICAL:** Always use the Amazon TLD that matches the shipping country (e.g. `.de` for Germany, `.co.uk` for UK, `.com.br` for Brazil)
-- **Free Prime shipping:** Prime-eligible items ship free via SP3ND's Prime accounts (some surrounding regions may have standard shipping fees)
+- **Supported retailers:** Amazon (22 country TLDs) + eBay (8 country TLDs) — see tables above
+- **CRITICAL:** Always use the marketplace TLD that matches the shipping country (e.g. `amazon.de` / `ebay.de` for Germany)
+- **Free Prime shipping (Amazon):** Prime-eligible items ship free via SP3ND's Prime accounts (some surrounding regions may have standard shipping fees)
+- **eBay shipping:** Per-item, set by seller, varies by destination — location-aware pricing via eBay Browse API
+- **Key regeneration:** Lost your secret? Use `POST /regenerateAgentSecret` with a Solana wallet signature
 - **Shipping:** 200+ countries
 - **No KYC required**
 - **Points & Airdrop:** Every order earns SP3ND points toward a potential future airdrop
