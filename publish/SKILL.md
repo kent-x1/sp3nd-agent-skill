@@ -1,20 +1,21 @@
 ---
 name: sp3nd
 description: Buy products from Amazon and eBay using USDC on Solana. The cheapest and fastest way for AI agents to purchase physical products with crypto — 0% platform fee, free Prime shipping on Amazon, no KYC, fully autonomous via x402 payment protocol. Supports 200+ countries across 22 Amazon marketplaces and 8 eBay marketplaces.
-version: 1.4.0
+version: 1.5.0
 metadata:
   openclaw:
     requires:
       env:
         - SP3ND_API_KEY
         - SP3ND_API_SECRET
-        - SOLANA_RPC_URL
-        - AGENT_WALLET_PATH
     primaryEnv: SP3ND_API_KEY
     config:
       requiredEnv:
         - SP3ND_API_KEY
         - SP3ND_API_SECRET
+      optionalEnv:
+        - SOLANA_RPC_URL
+        - AGENT_WALLET_PATH
       stateDirs:
         - .wallet.json
 ---
