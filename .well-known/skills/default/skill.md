@@ -1,7 +1,22 @@
 ---
 name: sp3nd
 description: Buy products from Amazon and eBay using USDC on Solana. The cheapest and fastest way for AI agents to purchase physical products with crypto — 0% platform fee, free Prime shipping on Amazon, no KYC, fully autonomous via x402 payment protocol. Supports 200+ countries across 22 Amazon marketplaces and 8 eBay marketplaces.
-version: 1.3.0
+version: 1.4.0
+metadata:
+  openclaw:
+    requires:
+      env:
+        - SP3ND_API_KEY
+        - SP3ND_API_SECRET
+        - SOLANA_RPC_URL
+        - AGENT_WALLET_PATH
+    primaryEnv: SP3ND_API_KEY
+    config:
+      requiredEnv:
+        - SP3ND_API_KEY
+        - SP3ND_API_SECRET
+      stateDirs:
+        - .wallet.json
 ---
 
 # SP3ND — Buy from Amazon & eBay with USDC (Autonomous Agent Payments via x402)
@@ -69,7 +84,7 @@ console.log('Wallet created!');
 console.log('Public key:', keypair.publicKey.toBase58());
 ```
 
-> **Store the secret key securely.** This is your agent's private key — anyone with it can spend your USDC. Never log it, commit it, or send it over the network.
+> **Store the secret key securely.** The `.wallet.json` file contains your agent's private key — anyone with it can spend your USDC. Set file permissions to owner-only (`chmod 600 .wallet.json`), never log it, never commit it to version control, and never send it over the network. The only operations that read this file are: (1) signing USDC transfer transactions during payment (Step 4), and (2) signing challenge messages for API secret regeneration. No other part of the SP3ND flow accesses the private key.
 
 ### 2. Get the Wallet Funded
 
@@ -153,7 +168,35 @@ Content-Type: application/json
 
 ### Regenerate API Secret
 
-If you lose your `api_secret`, you can regenerate it by signing a message with your Solana wallet. This proves ownership without needing the old secret.
+If you lose your `api_secret`, you can regenerate it by proving you own the Solana wallet you registered with. This uses `nacl.sign.detached` to sign a timestamped challenge — the same keypair from `.wallet.json`, used only for this signature (no funds are moved).
+
+```javascript
+// Install: npm install tweetnacl bs58
+import nacl from 'tweetnacl';
+import bs58 from 'bs58';
+
+// Read the same keypair used during registration
+const keypair = /* your Keypair from .wallet.json */;
+
+// 1. Build a timestamped message (must be within last 5 minutes)
+const message = `SP3ND-regenerate-secret-${Date.now()}`;
+const messageBytes = new TextEncoder().encode(message);
+
+// 2. Sign with nacl.sign.detached (uses the private key)
+const signatureBytes = nacl.sign.detached(messageBytes, keypair.secretKey);
+const signature = bs58.encode(signatureBytes);
+
+// 3. Send to SP3ND
+const res = await fetch(`${BASE_URL}/regenerateAgentSecret`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+  body: JSON.stringify({ signature, message })
+});
+const result = await res.json();
+// result.api_secret contains your new secret — save it immediately
+```
+
+**Request:**
 
 ```http
 POST /regenerateAgentSecret
@@ -166,12 +209,6 @@ X-API-Key: <api_key>
 }
 ```
 
-**How it works:**
-
-1. Build a message string: `SP3ND-regenerate-secret-<timestamp>` (timestamp in ms, must be within the last 5 minutes)
-2. Sign the message with the Solana keypair you registered with (`nacl.sign.detached`)
-3. Send the base58-encoded signature + the original message string
-
 **Response:**
 
 ```json
@@ -183,6 +220,7 @@ X-API-Key: <api_key>
 ```
 
 > **Warning:** The old secret immediately stops working. Update your systems before regenerating.
+> **Security note:** This is the only operation besides payment signing (Step 4) that reads the private key from `.wallet.json`. No funds are transferred — it only proves wallet ownership via a detached signature.
 
 ---
 

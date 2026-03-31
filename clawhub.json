@@ -2,7 +2,7 @@
   "slug": "sp3nd",
   "name": "SP3ND — Buy from Amazon & eBay with USDC",
   "description": "Buy products from Amazon and eBay using USDC on Solana. 0% platform fee, no KYC, free Prime shipping on Amazon, 200+ countries, fully autonomous via x402 payment protocol.",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "tags": ["solana", "usdc", "amazon", "ebay", "x402", "shopping", "ecommerce", "payments", "crypto"],
   "skill": "SKILL.md",
   "homepage": "https://sp3nd.shop",
@@ -35,7 +35,7 @@
         "default_path": ".wallet.json"
       }
     },
-    "config_paths": [".wallet.json", ".env"],
+    "config_paths": [".wallet.json"],
     "network_access": [
       "https://us-central1-sp3nddotshop-prod.cloudfunctions.net (SP3ND API)",
       "https://facilitator.payai.network (x402 payment facilitator)",
