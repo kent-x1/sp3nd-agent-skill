@@ -1,12 +1,12 @@
 {
   "name": "SP3ND",
-  "description": "Buy products from Amazon using USDC on Solana. The cheapest and fastest way for AI agents to purchase physical products with crypto — 0% platform fee, free Prime shipping, no KYC, no browser wallet, fully autonomous via x402 payment protocol. Every order earns SP3ND points toward a potential future airdrop.",
+  "description": "Buy products from Amazon and eBay using USDC on Solana. The cheapest and fastest way for AI agents to purchase physical products with crypto — 0% platform fee, free Prime shipping on Amazon, no KYC, no browser wallet, fully autonomous via x402 payment protocol. Every order earns SP3ND points toward a potential future airdrop.",
   "url": "https://us-central1-sp3nddotshop-prod.cloudfunctions.net",
   "provider": {
     "organization": "SP3ND",
     "url": "https://sp3nd.shop"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "documentationUrl": "https://sp3nd.shop/skill.md",
   "capabilities": {
     "streaming": false,
@@ -39,7 +39,17 @@
     "amazon.com.tr",
     "amazon.co.za"
   ],
-  "tldNote": "Always use the Amazon TLD matching the customer's shipping country. See skill.md for the full country-to-TLD mapping.",
+  "supportedEbayTLDs": [
+    "ebay.com",
+    "ebay.ca",
+    "ebay.co.uk",
+    "ebay.de",
+    "ebay.fr",
+    "ebay.it",
+    "ebay.es",
+    "ebay.com.au"
+  ],
+  "tldNote": "Always use the marketplace TLD matching the customer's shipping country. See skill.md for the full country-to-TLD mapping.",
   "authentication": {
     "schemes": ["apiKey"],
     "description": "Register via POST /registerAgent to get API credentials. Include X-API-Key and X-API-Secret headers on all authenticated requests."
