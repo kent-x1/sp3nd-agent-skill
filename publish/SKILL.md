@@ -1,7 +1,7 @@
 ---
 name: sp3nd
 description: Buy products from Amazon and eBay using USDC on Solana. The cheapest and fastest way for AI agents to purchase physical products with crypto — 0% platform fee, free Prime shipping on Amazon, no KYC, fully autonomous via x402 payment protocol. Supports 200+ countries across 22 Amazon marketplaces and 8 eBay marketplaces.
-version: 1.2.0
+version: 1.3.0
 ---
 
 # SP3ND — Buy from Amazon & eBay with USDC (Autonomous Agent Payments via x402)
@@ -109,6 +109,15 @@ console.log(`USDC balance: $${balance}`);
 Once the wallet has USDC, the agent can operate fully autonomously — register with SP3ND, create carts, place orders, and pay via x402, all without any further human involvement.
 
 > **What is USDC?** USDC is a stablecoin pegged 1:1 to the US dollar. $1 USDC = $1 USD, always. It runs on Solana with ~400ms transaction finality and near-zero gas fees (fractions of a cent). Your human can buy USDC on Coinbase, Kraken, Phantom, or any major exchange and send it directly to the agent's wallet address.
+
+### Spending Controls
+
+Once funded, the agent can spend USDC autonomously — that's the whole point of x402. But operators should control exposure:
+
+- **Fund only what you're comfortable spending.** The wallet balance is the agent's spending limit. Don't load $1,000 if the agent only needs to make $50 in purchases.
+- **Use a dedicated wallet.** Never reuse a wallet that holds other funds. Generate a fresh keypair specifically for this agent.
+- **Monitor balance.** The agent can check its own balance (see above). Operators can also watch the wallet address on any Solana explorer.
+- **Optional human approval.** If your use case requires human sign-off before each purchase, implement an approval gate in your agent's logic before calling `createPartnerOrder`. SP3ND's API is stateless — nothing is charged until the agent explicitly calls `payAgentOrder` and signs a transaction.
 
 ---
 

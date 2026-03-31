@@ -1,0 +1,7 @@
+scripts/
+.env
+.env.example
+.wallet.json
+.claude/
+.github/
+.DS_Store

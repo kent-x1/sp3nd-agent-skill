@@ -20,12 +20,16 @@ jobs:
           node-version: '20'
       - name: Install ClawHub CLI
         run: npm install -g clawhub
+      - name: Stage publish directory
+        run: |
+          cp clawhub.json publish/clawhub.json
+          cp agent-card.json publish/agent-card.json
       - name: Publish skill
         env:
           CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
         run: |
           clawhub login --token "$CLAWHUB_TOKEN" --no-browser
-          clawhub publish . \
+          clawhub publish ./publish \
             --slug sp3nd \
             --name "SP3ND — Buy from Amazon & eBay with USDC" \
             --version $(node -p "require('./agent-card.json').version") \
