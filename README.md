@@ -1,10 +1,10 @@
 # SP3ND Agent Skill
 
-Buy products from Amazon using USDC on Solana — fully autonomous via x402 payment protocol.
+Buy products from Amazon & eBay using USDC on Solana — fully autonomous via x402 payment protocol.
 
 ## What is this?
 
-This is an [Agent Skill](https://agentskills.io) for SP3ND, a decentralized e-commerce bridge that lets AI agents autonomously purchase real Amazon products using USDC on Solana. No KYC, no payment processing fees, 0% platform fee, free Prime shipping to 200+ countries.
+This is an [Agent Skill](https://agentskills.io) for SP3ND, a decentralized e-commerce bridge that lets AI agents autonomously purchase real products from Amazon and eBay using USDC on Solana. No KYC, no payment processing fees, 0% platform fee, free Prime shipping on Amazon, to 200+ countries.
 
 ## Install
 
@@ -50,11 +50,13 @@ This skill works with any agent that supports the [Agent Skills](https://agentsk
 
 ## What Agents Can Do
 
-1. **Register** — instant API credentials, no approval queue
-2. **Create a cart** — add Amazon products from 22 supported marketplaces
-3. **Place an order** — ship to 200+ countries with free Prime shipping
-4. **Pay autonomously** — x402 protocol handles USDC payment on Solana
-5. **Track orders** — monitor order status from creation to delivery
+1. **Set up a wallet** — generate a Solana keypair, give the public key to a human to fund with USDC
+2. **Register** — instant API credentials, no approval queue
+3. **Create a cart** — add Amazon and eBay products, mixed in a single cart
+4. **Place an order** — ship to 200+ countries with free Prime shipping on Amazon
+5. **Pay autonomously** — x402 protocol handles USDC payment on Solana
+6. **Track orders** — monitor order status from creation to delivery
+7. **Regenerate keys** — lost your API secret? Prove wallet ownership to get a new one
 
 ## Key Details
 
@@ -62,10 +64,12 @@ This skill works with any agent that supports the [Agent Skills](https://agentsk
 |---|---|
 | Platform fee | 0% |
 | Payment | USDC on Solana (x402) |
-| Shipping | Free Prime on eligible items |
+| Amazon shipping | Free Prime on eligible items |
+| eBay shipping | Per-item, location-aware pricing |
 | KYC | None required |
 | Countries | 200+ |
 | Amazon marketplaces | 22 |
+| eBay marketplaces | 8 |
 
 ## Web Discovery
 

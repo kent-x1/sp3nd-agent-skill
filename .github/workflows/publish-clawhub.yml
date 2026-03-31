@@ -27,6 +27,6 @@ jobs:
           clawhub login --token "$CLAWHUB_TOKEN" --no-browser
           clawhub publish . \
             --slug sp3nd \
-            --name "SP3ND — Buy from Amazon with USDC" \
+            --name "SP3ND — Buy from Amazon & eBay with USDC" \
             --version $(node -p "require('./agent-card.json').version") \
-            --tags "latest,solana,usdc,amazon,x402,shopping,ecommerce"
+            --tags "latest,solana,usdc,amazon,ebay,x402,shopping,ecommerce"
