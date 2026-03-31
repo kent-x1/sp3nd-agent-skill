@@ -33,15 +33,82 @@ AI agents interact with SP3ND through the **Agent API**, which extends the Partn
 https://us-central1-sp3nddotshop-prod.cloudfunctions.net
 ```
 
-### Quick Start: 5 Steps to Your First Order
+### Quick Start: 6 Steps to Your First Order
 
 ```
-1. POST /registerAgent       -> Get API key + secret (one-time)
-2. POST /createPartnerCart    -> Get cart_id
-3. POST /createPartnerOrder   -> Get order_id, order_number, total_amount
-4. POST /payAgentOrder        -> Returns 402 -> agent pays USDC -> retries -> 200 OK
-5. GET  /getPartnerOrders     -> Track order status
+0. Generate Solana wallet     -> Save keypair, give public key to human to fund with USDC
+1. POST /registerAgent        -> Get API key + secret (one-time)
+2. POST /createPartnerCart     -> Get cart_id
+3. POST /createPartnerOrder    -> Get order_id, order_number, total_amount
+4. POST /payAgentOrder         -> Returns 402 -> agent pays USDC -> retries -> 200 OK
+5. GET  /getPartnerOrders      -> Track order status
 ```
+
+---
+
+## Step 0: Set Up Your Wallet
+
+Before you can use SP3ND, your agent needs a Solana wallet holding USDC. The agent creates this wallet autonomously — the only thing that requires a human is sending USDC to fund it.
+
+### 1. Generate a Keypair
+
+```javascript
+import { Keypair } from '@solana/web3.js';
+import { writeFileSync } from 'fs';
+
+// Generate a new random keypair
+const keypair = Keypair.generate();
+
+// Save the secret key securely (never share this)
+writeFileSync('.wallet.json', JSON.stringify({
+  publicKey: keypair.publicKey.toBase58(),
+  secret: Array.from(keypair.secretKey)
+}));
+
+console.log('Wallet created!');
+console.log('Public key:', keypair.publicKey.toBase58());
+```
+
+> **Store the secret key securely.** This is your agent's private key — anyone with it can spend your USDC. Never log it, commit it, or send it over the network.
+
+### 2. Get the Wallet Funded
+
+Your agent's wallet needs USDC (on Solana) to make purchases. Present the public key to the human operator so they can fund it:
+
+```
+Your SP3ND agent wallet is ready.
+
+To start shopping, send USDC (Solana) to this address:
+  <public_key>
+
+You can send USDC from any Solana wallet, exchange, or on-ramp.
+Even $5 in USDC is enough to test with a small purchase.
+```
+
+The agent should check its USDC balance before attempting to place orders:
+
+```javascript
+import { Connection, PublicKey } from '@solana/web3.js';
+
+const USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+const connection = new Connection('https://api.mainnet-beta.solana.com');
+
+async function getUsdcBalance(walletPublicKey) {
+  const accounts = await connection.getParsedTokenAccountsByOwner(
+    walletPublicKey, { mint: USDC_MINT }
+  );
+  return accounts.value[0]?.account.data.parsed.info.tokenAmount.uiAmount || 0;
+}
+
+const balance = await getUsdcBalance(keypair.publicKey);
+console.log(`USDC balance: $${balance}`);
+```
+
+### 3. You're Ready
+
+Once the wallet has USDC, the agent can operate fully autonomously — register with SP3ND, create carts, place orders, and pay via x402, all without any further human involvement.
+
+> **What is USDC?** USDC is a stablecoin pegged 1:1 to the US dollar. $1 USDC = $1 USD, always. It runs on Solana with ~400ms transaction finality and near-zero gas fees (fractions of a cent). Your human can buy USDC on Coinbase, Kraken, Phantom, or any major exchange and send it directly to the agent's wallet address.
 
 ---
 
