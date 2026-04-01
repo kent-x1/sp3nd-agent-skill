@@ -1,7 +1,7 @@
 ---
 name: sp3nd
 description: Buy products from Amazon and eBay using USDC on Solana. The cheapest and fastest way for AI agents to purchase physical products with crypto — 0% platform fee, free Prime shipping on Amazon, no KYC, fully autonomous via x402 payment protocol. Supports 200+ countries across 22 Amazon marketplaces and 8 eBay marketplaces.
-version: 1.5.0
+version: 1.6.0
 metadata:
   openclaw:
     requires:
@@ -369,46 +369,71 @@ X-API-Secret: <api_secret>
 
 **Response: HTTP 402 Payment Required**
 
-The payment requirements are returned in the `PAYMENT-REQUIRED` HTTP header as a base64-encoded JSON object (not in the response body). Decode it to get:
+The payment requirements are returned in **two places** (use either):
+- The `PAYMENT-REQUIRED` HTTP header (base64-encoded JSON)
+- The response body `paymentRequirements` field (same object, already decoded)
 
 ```json
 {
-  "x402Version": 1,
+  "x402Version": 2,
   "scheme": "exact",
-  "network": "solana",
-  "resource": "https://us-central1-sp3nddotshop-prod.cloudfunctions.net/payAgentOrder",
+  "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
   "accepts": [{
+    "scheme": "exact",
+    "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
     "maxAmountRequired": "30740000",
-    "amount": "30740000",
+    "resource": "https://us-central1-sp3nddotshop-prod.cloudfunctions.net/payAgentOrder",
+    "description": "SP3ND Order: ORD-1234567890",
+    "mimeType": "application/json",
     "payTo": "2nkTRv3qxk7n2eYYjFAndReVXaV7sTF3Z9pNimvp5jcp",
-    "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     "maxTimeoutSeconds": 300,
+    "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     "extra": {
-      "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4",
-      "order_number": "ORD-1234567890"
+      "name": "SP3ND Agent Payment",
+      "order_id": "<order_id>",
+      "order_number": "ORD-1234567890",
+      "is_test": false,
+      "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4"
     }
   }]
 }
 ```
 
+The response body also includes convenience fields:
+
+```json
+{
+  "status": "payment_required",
+  "message": "Payment of $30.74 USDC required to complete order ORD-1234567890",
+  "paymentRequirements": { /* same object as above */ },
+  "amount": 30.74,
+  "currency": "USDC",
+  "pay_to": "2nkTRv3qxk7n2eYYjFAndReVXaV7sTF3Z9pNimvp5jcp",
+  "network": "solana",
+  "memo": "SP3ND Order: ORD-1234567890"
+}
+```
+
 > **Important details:**
+> - The 402 response uses **x402 v2** format with CAIP-2 network identifiers (`solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`).
 > - `extra.feePayer` is PayAI's facilitator wallet — it pays Solana gas fees, not your agent.
 > - `extra.order_number` is used to build the required memo instruction.
 > - `asset` is the USDC mint address as a flat string (not an object).
-> - `x402Version` must be `1` with `network: "solana"` (not CAIP-2 format). PayAI does not yet support v2 for Solana.
+> - **When building the payment payload for the facilitator**, use **x402 v1** format (`x402Version: 1`, `network: "solana"` without CAIP-2). The facilitator receives `accepts[0]` directly — see the code example below.
 
 > **Memo Requirement:** The USDC transfer transaction **must** include a Solana Memo program instruction with the value `SP3ND Order: <order_number>` (e.g. `SP3ND Order: ORD-1234567890`). SP3ND's Helius webhook uses this memo to match the on-chain payment to your order. Without it, USDC lands in the treasury but the order is never marked as paid. **Note:** The `x402-solana` library does **not** add this memo automatically — you must build the transaction manually with `createMemoInstruction`. See the code example below.
 
 **Your agent must:**
 
-1. Read the `PAYMENT-REQUIRED` header from the 402 response and base64-decode it
-2. Build a **VersionedTransaction (v0)** with:
+1. Parse the payment requirements from the 402 response (either the `PAYMENT-REQUIRED` header or the body's `paymentRequirements` field)
+2. Extract `accepts[0]` — this contains `payTo`, `maxAmountRequired`, `asset`, and `extra`
+3. Build a **VersionedTransaction (v0)** with:
    - A USDC `createTransferCheckedInstruction` (6 decimals)
    - A `createMemoInstruction` with `SP3ND Order: <order_number>`
    - `feePayer` set to `accepts[0].extra.feePayer` (PayAI's wallet — **not** your agent)
-3. Sign with your agent's keypair (`tx.sign([keypair])`)
-4. Build an x402 v1 payment payload and call the facilitator's `/verify` then `/settle` endpoints
-5. Poll `GET /getPartnerOrders` until the order status is `Paid` (typically within 60 seconds)
+4. Sign with your agent's keypair (`tx.sign([keypair])`)
+5. Build an **x402 v1** payment payload and call the facilitator's `/verify` then `/settle` endpoints
+6. Poll `GET /getPartnerOrders` until the order status is `Paid` (typically within 60 seconds)
 
 **Payment confirmation:**
 
