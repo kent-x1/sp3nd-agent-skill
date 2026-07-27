@@ -1,8 +1,8 @@
 {
   "slug": "sp3nd",
-  "name": "SP3ND — Buy from Amazon & eBay with USDC",
-  "description": "Buy products from Amazon and eBay using USDC on Solana. 0% platform fee, no KYC, free Prime shipping on Amazon, 200+ countries, fully autonomous via x402 payment protocol.",
-  "version": "1.6.0",
+  "name": "SP3ND — Stablecoin purchasing agent",
+  "description": "Create server-priced physical-goods orders, wait for manual quotes when required, select server-provided shipping options, and pay payment-ready orders with stablecoins through x402.",
+  "version": "1.8.0",
   "tags": ["solana", "usdc", "amazon", "ebay", "x402", "shopping", "ecommerce", "payments", "crypto"],
   "skill": "SKILL.md",
   "homepage": "https://sp3nd.shop",
@@ -18,6 +18,10 @@
       "SP3ND_API_SECRET": {
         "description": "API secret from POST /registerAgent (shown once — save immediately)",
         "required": true
+      },
+      "SP3ND_USER_WALLET": {
+        "description": "Optional end-user wallet attribution included on carts and orders",
+        "required": false
       },
       "SOLANA_RPC_URL": {
         "description": "Solana RPC endpoint (defaults to https://api.mainnet-beta.solana.com)",
@@ -38,12 +42,11 @@
     "config_paths": [".wallet.json"],
     "network_access": [
       "https://us-central1-sp3nddotshop-prod.cloudfunctions.net (SP3ND API)",
-      "https://facilitator.payai.network (x402 payment facilitator)",
       "https://api.mainnet-beta.solana.com (Solana RPC)"
     ]
   },
   "security": {
     "autonomous_spending": true,
-    "spending_note": "Once funded, the agent can spend USDC without per-transaction human approval. Fund the wallet only with amounts you're comfortable with the agent spending autonomously. See SKILL.md for optional human-approval patterns."
+    "spending_note": "An agent may submit payment without per-transaction human approval only after SP3ND marks the order payment-ready and returns a current server-authoritative quote and x402 payment requirement. Apply spending limits, preserve idempotency keys, and never retry an uncertain payment without first reading the order."
   }
 }

@@ -1,10 +1,6 @@
 # SP3ND Agent Skill
 
-Buy products from Amazon & eBay using USDC on Solana — fully autonomous via x402 payment protocol.
-
-## What is this?
-
-This is an [Agent Skill](https://agentskills.io) for SP3ND, a decentralized e-commerce bridge that lets AI agents autonomously purchase real products from Amazon and eBay using USDC on Solana. No KYC, no payment processing fees, 0% platform fee, free Prime shipping on Amazon, to 200+ countries.
+The SP3ND Agent Skill lets an agent create server-priced physical-goods orders, wait for manual quotes when required, select quoted shipping, pay payment-ready orders with USDC on Solana through x402, and track fulfillment.
 
 ## Install
 
@@ -12,80 +8,61 @@ This is an [Agent Skill](https://agentskills.io) for SP3ND, a decentralized e-co
 npx skills add kent-x1/sp3nd-agent-skill
 ```
 
-This installs the SP3ND skill to all supported agents on your machine. The CLI will auto-detect which agents you have and let you choose where to install.
+The skill follows the [Agent Skills](https://agentskills.io) format and can also be installed by copying `SKILL.md` into an agent's skills directory.
 
-Also available on [ClawHub](https://clawhub.ai/kent-x1/sp3nd).
+## Order lifecycle
 
-### Manual install for Claude Code
-
-```bash
-mkdir -p ~/.claude/skills/sp3nd
-cp SKILL.md ~/.claude/skills/sp3nd/SKILL.md
+```text
+product URL + quantity
+  -> server-priced cart
+  -> idempotent order
+      -> Ready for Payment
+      -> or Awaiting Review until SP3ND supplies a quote
+          -> Ready for Payment
+  -> shipping selection when required
+  -> server-issued x402 requirements
+  -> payment
+  -> fulfillment tracking
 ```
 
-### Manual install for OpenAI Codex
+Mixed or unverified carts remain one order. An agent must not pay while `payment_ready` is false, while a quote is expired, or while a required shipping option is unselected. Canonical current orders use `pricing_status: "ready_for_payment"`; deprecated `quoted` may appear on legacy orders, but never makes an order payable by itself.
+An `Awaiting Review` order must reach **Ready for Payment** before it becomes `Paid`; it must never skip that gate.
+
+SP3ND is authoritative for listing data and all monetary fields. Agents submit product URLs and quantities; caller-supplied prices, totals, currency, payment recipients, and memos must never control a purchase.
+
+For end-user purchases, send `user_wallet` so order history and points are attributed to the correct wallet.
+
+## Reference payment example
+
+Install the example dependencies:
 
 ```bash
-mkdir -p ~/.codex/skills/sp3nd
-cp SKILL.md ~/.codex/skills/sp3nd/SKILL.md
+npm install @solana/web3.js @solana/spl-token @solana/spl-memo dotenv
 ```
 
-### Manual install for VS Code / GitHub Copilot
+Copy `.env.example` to `.env`, provide the required values, and run:
 
 ```bash
-mkdir -p .github/skills/sp3nd
-cp SKILL.md .github/skills/sp3nd/SKILL.md
+node scripts/x402-pay-with-memo.mjs
 ```
 
-## Compatible Agents
+The example:
 
-This skill works with any agent that supports the [Agent Skills](https://agentskills.io) standard, including:
+- creates an order with a stable `Idempotency-Key`;
+- stops or polls when SP3ND is reviewing the order;
+- requires an opaque server-returned shipping option when applicable;
+- refreshes and validates quote revision, expiry, and payment readiness;
+- constructs payment only from the HTTP 402 amount, asset, recipient, memo, and resource;
+- submits the signed payload only to SP3ND, which owns verification and settlement;
+- reads the order before any retry when settlement or confirmation is uncertain.
 
-- Claude Code / Claude.ai (Anthropic)
-- ChatGPT / Codex CLI (OpenAI)
-- GitHub Copilot (VS Code)
-- Cursor
-- Windsurf
-- Goose (Block)
-- Gemini CLI (Google)
-- Amp, Cline, Roo Code, Trae, and 30+ more
+## Documentation and discovery
 
-## What Agents Can Do
-
-1. **Set up a wallet** — generate a Solana keypair, give the public key to a human to fund with USDC
-2. **Register** — instant API credentials, no approval queue
-3. **Create a cart** — add Amazon and eBay products, mixed in a single cart
-4. **Place an order** — ship to 200+ countries with free Prime shipping on Amazon
-5. **Pay autonomously** — x402 protocol handles USDC payment on Solana
-6. **Track orders** — monitor order status from creation to delivery
-7. **Regenerate keys** — lost your API secret? Prove wallet ownership to get a new one
-
-## Key Details
-
-| Feature | Detail |
-|---|---|
-| Platform fee | 0% |
-| Payment | USDC on Solana (x402) |
-| Amazon shipping | Free Prime on eligible items |
-| eBay shipping | Per-item, location-aware pricing |
-| KYC | None required |
-| Countries | 200+ |
-| Amazon marketplaces | 22 |
-| eBay marketplaces | 8 |
-
-## Web Discovery
-
-This skill is also available via web discovery:
-
-- **Agent card (A2A):** `https://sp3nd.shop/.well-known/agent-card.json`
-- **Skill file:** `https://sp3nd.shop/skill.md`
-
-## Links
-
-- **Website:** https://sp3nd.shop
-- **API Docs:** https://sp3nd.shop/partner-api/docs
-- **Dashboard:** https://sp3nd.shop/partner-api/dashboard
-- **Support:** support@sp3nd.shop
+- API documentation: <https://sp3nd.shop/partner-api/docs>
+- Partner dashboard: <https://sp3nd.shop/partner-api/dashboard>
+- Agent card: <https://sp3nd.shop/.well-known/agent-card.json>
+- Published skill: <https://sp3nd.shop/skill.md>
+- Support: <support@sp3nd.shop>
 
 ## License
 
