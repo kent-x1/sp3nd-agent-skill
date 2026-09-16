@@ -1,12 +1,12 @@
 {
   "name": "SP3ND",
-  "description": "Create server-priced carts, place lifecycle-aware physical-goods orders, pay payment-ready orders with USDC on Solana, and track fulfillment through SP3ND.",
+  "description": "Create server-priced shipped-product and Collector Crypt card orders, pay with USDC on Solana, and track fulfillment. SP3ND manually purchases paid Collector Crypt cards and transfers the NFT to the buyer wallet.",
   "url": "https://us-central1-sp3nddotshop-prod.cloudfunctions.net",
   "provider": {
     "organization": "SP3ND",
     "url": "https://sp3nd.shop"
   },
-  "version": "1.8.0",
+  "version": "1.11.0",
   "documentationUrl": "https://sp3nd.shop/skill.md",
   "capabilities": {
     "streaming": false,
@@ -17,7 +17,12 @@
     "shippingOptionSelection": true,
     "idempotentOrderCreation": true,
     "serverAuthoritativePricing": true,
-    "walletAttribution": true
+    "walletAttribution": true,
+    "collectorCryptSearch": true,
+    "walletAssetDelivery": true,
+    "collectorCryptFulfillmentEnabledByDefault": true,
+    "manualWalletAssetFulfillment": true,
+    "automatedWalletAssetFulfillment": false
   },
   "supportedAmazonTLDs": [
     "amazon.com",
@@ -53,7 +58,7 @@
     "ebay.es",
     "ebay.com.au"
   ],
-  "tldNote": "Use a marketplace URL appropriate for the recipient, and always send the complete final destination when creating the order. eBay pricing and shipping are destination-dependent.",
+  "tldNote": "Use a marketplace URL appropriate for the recipient, and always send the complete final destination when creating the order. eBay pricing and shipping are destination-dependent. Collector Crypt-only orders omit shipping and use asset_recipient_wallet.",
   "authentication": {
     "schemes": [
       "apiKey"
@@ -74,7 +79,9 @@
     "quoteSafety": "Honor quote_revision, quote_expires_at, shipping_options, selected_shipping_option_id, and selected_shipping_option. Refresh expired or changed quotes.",
     "shippingCompatibility": "Canonical options use shipping_option_id and canonical selections expose selected_shipping_option_id plus selected_shipping_option. Legacy id and selected_manual_shipping_option values may appear only for compatibility.",
     "pricingAuthority": "SP3ND resolves product data and payment requirements. Caller-provided prices, totals, currency, recipient, and memo are not authoritative.",
-    "walletAttribution": "Send user_wallet for end-user history and points attribution."
+    "walletAttribution": "Send user_wallet for end-user history and points attribution.",
+    "assetDelivery": "Collector Crypt orders use a fixed asset_recipient_wallet and manual fulfillment. Paid confirms SP3ND treasury receipt only and queues pending_acquisition for SP3ND's manual operations team. Authorized operations must verify the wallet transfer and atomically record delivered fulfillment metadata and transfer evidence with top-level status Delivered; clients use that top-level status as the completion gate. A claim mismatch uses review_required, and a sold or changed listing may require manual handling and a refund.",
+    "paymentFlow": "For Collector Crypt orders use partnerPayment prepare/submit only; createPartnerTransaction and payAgentOrder reject real cards. Supported non-card agentic-skill orders retain the payAgentOrder x402 flow. Do not chain payment surfaces."
   },
   "skills": [
     {
@@ -112,7 +119,7 @@
     {
       "id": "create-cart",
       "name": "Create Server-Priced Cart",
-      "description": "Create a cart from product URLs and quantities. Display metadata supplied by callers is non-authoritative.",
+      "description": "Create a server-priced cart from shipped-product URLs or one Collector Crypt asset. Display metadata and prices supplied by callers are non-authoritative.",
       "inputModes": [
         "application/json"
       ],
@@ -130,26 +137,41 @@
           "items": {
             "product_url": {
               "type": "string",
-              "required": true
+              "required": false,
+              "description": "Canonical Amazon/eBay HTTPS product URL, a supported Amazon/eBay product-share link, or an exact https://collectorcrypt.com/assets/solana/<asset-address> URL."
+            },
+            "provider": {
+              "type": "string",
+              "required": false,
+              "enum": [
+                "collectorcrypt"
+              ],
+              "description": "Use with nft_address instead of product_url for a Collector Crypt card."
+            },
+            "nft_address": {
+              "type": "string",
+              "required": false,
+              "description": "Exact Collector Crypt Solana asset address; requires provider=collectorcrypt."
             },
             "quantity": {
               "type": "integer",
               "required": true,
-              "minimum": 1
+              "minimum": 1,
+              "description": "Physical products follow normal cart bounds. Collector Crypt assets require exactly 1 and one card per cart."
             }
           }
         },
         "user_wallet": {
           "type": "string",
           "required": false,
-          "description": "End-user Solana wallet for attribution. Always include it for end-user purchases."
+          "description": "Optional valid on-curve Solana wallet saved on the cart. createPartnerOrder uses it when the order request omits user_wallet; the final Collector Crypt buyer and asset-recipient wallets must still resolve identically."
         }
       }
     },
     {
       "id": "create-order",
       "name": "Create Lifecycle-Aware Order",
-      "description": "Create one idempotent order from a cart. The result may be payment-ready or may require a team quote.",
+      "description": "Create one idempotent order from a cart. Shipped products require a complete shipping address. A Collector Crypt-only cart omits shipping and resolves user_wallet plus asset_recipient_wallet to the same buyer wallet; gifting is unsupported. Approved Partners may create and pay card orders without separate opt-in; confirmed payment queues SP3ND's manual purchase and wallet delivery.",
       "inputModes": [
         "application/json"
       ],
@@ -179,7 +201,7 @@
         "user_wallet": {
           "type": "string",
           "required": false,
-          "description": "End-user Solana wallet. Always include it for end-user attribution."
+          "description": "End-user Solana wallet. For Collector Crypt it resolves to the asset recipient; send both wallet fields identically."
         },
         "customer_email": {
           "type": "string",
@@ -187,8 +209,8 @@
         },
         "shipping_address": {
           "type": "object",
-          "required": true,
-          "description": "Complete final destination; required for destination-aware eBay verification.",
+          "required": false,
+          "description": "Complete final destination required for shipped-product carts. Omit for a Collector Crypt-only cart.",
           "properties": {
             "name": {
               "type": "string",
@@ -231,6 +253,11 @@
               "required": true
             }
           }
+        },
+        "asset_recipient_wallet": {
+          "type": "string",
+          "required": false,
+          "description": "Collector Crypt delivery wallet. It must resolve to the same valid on-curve address as user_wallet; gifting is unsupported and a mismatch is rejected."
         }
       },
       "outputLifecycleFields": [
@@ -244,7 +271,19 @@
         "quote_expires_at",
         "shipping_options",
         "selected_shipping_option_id",
-        "selected_shipping_option"
+        "selected_shipping_option",
+        "selected_manual_shipping_option",
+        "order_type",
+        "fulfillment_type",
+        "fulfillment_provider",
+        "fulfillment_mode",
+        "requires_manual_fulfillment",
+        "fulfillment_status",
+        "asset_recipient_wallet",
+        "provider_purchase_signature",
+        "asset_transfer_signature",
+        "fulfilled_at",
+        "delivered_at"
       ]
     },
     {
@@ -315,7 +354,7 @@
     {
       "id": "pay-order",
       "name": "Pay Payment-Ready Order via x402",
-      "description": "Call only when payment_ready is true, the quote is current, and any required shipping option is selected. Canonical current orders use pricing_status ready_for_payment; quoted is deprecated legacy compatibility. Payment fields come from the server's 402 response.",
+      "description": "Call only when payment_ready is true, the quote is current, and any required shipping option is selected. Canonical current orders use pricing_status ready_for_payment; quoted is deprecated legacy compatibility. Payment fields come from the server's 402 response. Collector Crypt orders are unsupported and must use partnerPayment prepare/submit.",
       "inputModes": [
         "application/json"
       ],
@@ -346,7 +385,7 @@
     {
       "id": "create-transaction",
       "name": "Register Manual Payment Transaction",
-      "description": "Register payment intent for a payment-ready order. Caller amount, currency, memo, and recipient fields are ignored; use server-returned instructions.",
+      "description": "Register payment intent for a payment-ready order. Caller amount, currency, memo, and recipient fields are ignored; use server-returned instructions. Collector Crypt orders are unsupported and must use partnerPayment prepare/submit.",
       "inputModes": [
         "application/json"
       ],
@@ -381,6 +420,228 @@
       "endpoint": "/getAgentStatus",
       "method": "GET",
       "authentication": true
+    },
+    {
+      "id": "search-collector-crypt-cards",
+      "name": "Search Collector Crypt Cards",
+      "description": "Search eligible native-Solana Collector Crypt V2 buy-now listings with supported token standards and cent-denominated USDC prices. Upstream counts precede local eligibility filtering and may exceed items.length. createPartnerCart refetches the exact asset and establishes the authoritative quote.",
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ],
+      "endpoint": "/searchCollectorCryptCards",
+      "method": "GET",
+      "authentication": true,
+      "parameters": {
+        "q": {
+          "type": "string",
+          "required": false,
+          "maxLength": 200,
+          "description": "Optional substring card/item-name search or exact NFT-address/grading-ID lookup. Omit to browse."
+        },
+        "limit": {
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        },
+        "cursor": {
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 2048,
+          "description": "Opaque, nonblank next_cursor returned unchanged; control characters are rejected; takes precedence over page."
+        },
+        "page": {
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 10000
+        }
+      }
+    },
+    {
+      "id": "prepare-collector-crypt-payment",
+      "name": "Prepare Collector Crypt Payment",
+      "description": "Prepare one server-authoritative, immutable, expiry-bound Solana USDC transaction for a payment-ready Collector Crypt order. Payment goes to SP3ND and queues manual acquisition and wallet delivery after confirmation; it does not itself deliver the card.",
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ],
+      "endpoint": "/partnerPayment",
+      "method": "POST",
+      "authentication": true,
+      "parameters": {
+        "action": {
+          "type": "string",
+          "required": true,
+          "const": "prepare"
+        },
+        "order_id": {
+          "type": "string",
+          "required": true
+        },
+        "payer_address": {
+          "type": "string",
+          "required": true,
+          "description": "Valid Solana address that must match the order wallet and sign the exact returned transaction."
+        },
+        "order_number": {
+          "type": "string",
+          "required": false,
+          "description": "Compatibility field; validated if present."
+        }
+      },
+      "responseFields": [
+        "success",
+        "status",
+        "idempotent_replay",
+        "order_id",
+        "order_number",
+        "amount",
+        "currency",
+        "network",
+        "payer_address",
+        "recipient_address",
+        "token_mint",
+        "token_decimals",
+        "amount_atomic",
+        "memo",
+        "unsigned_transaction_base64",
+        "recent_blockhash",
+        "last_valid_block_height"
+      ]
+    },
+    {
+      "id": "submit-collector-crypt-payment",
+      "name": "Submit Collector Crypt Payment",
+      "description": "Submit only the exact wallet-signed serialization from the matching prepare response. On an unknown result, read the order and retry only those identical signed bytes; never rebuild or re-sign.",
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ],
+      "endpoint": "/partnerPayment",
+      "method": "POST",
+      "authentication": true,
+      "parameters": {
+        "action": {
+          "type": "string",
+          "required": true,
+          "const": "submit"
+        },
+        "order_id": {
+          "type": "string",
+          "required": true
+        },
+        "signed_transaction_base64": {
+          "type": "string",
+          "required": true,
+          "maxLength": 16000,
+          "description": "Exact signed transaction returned by the matching prepare action; never rebuilt or modified."
+        },
+        "order_number": {
+          "type": "string",
+          "required": false,
+          "description": "Compatibility field; validated if present."
+        }
+      },
+      "responseStatuses": [
+        "verifying_payment",
+        "already_paid"
+      ]
     }
-  ]
+  ],
+  "collectorCryptPaymentSurface": "partnerPayment",
+  "collectorCryptContract": {
+    "searchEndpoint": "/searchCollectorCryptCards",
+    "provider": "collectorcrypt",
+    "network": "solana",
+    "currency": "USDC",
+    "supportedTokenStandards": [
+      "Pnft",
+      "Cnft",
+      "StandardNft",
+      "CoreNft"
+    ],
+    "pricePrecision": "positive cent-denominated USDC amount",
+    "canonicalAssetUrl": "https://collectorcrypt.com/assets/solana/<asset-address>",
+    "cartItemLimit": 1,
+    "quantity": 1,
+    "mixedCarts": false,
+    "quoteLifetimeMinutes": 5,
+    "shippingAddressRequired": false,
+    "assetRecipientField": "asset_recipient_wallet",
+    "recipientRule": "payer_address, user_wallet, and asset_recipient_wallet must resolve to the same valid on-curve Solana wallet; gifting is unsupported.",
+    "realOrderAndPaymentDefault": "enabled_for_approved_partners",
+    "paymentEndpoint": "/partnerPayment",
+    "paymentActions": [
+      "prepare",
+      "submit"
+    ],
+    "createPartnerTransactionSupported": false,
+    "wrongPaymentMethodErrorCode": "COLLECTOR_CRYPT_PAYMENT_METHOD_UNSUPPORTED",
+    "recipientMismatchErrorCode": "ASSET_RECIPIENT_WALLET_MISMATCH",
+    "cartWalletInvalidErrorCode": "USER_WALLET_INVALID",
+    "searchResponseMetadata": {
+      "schema_version": 2,
+      "item": [
+        "pricing_source",
+        "card_id",
+        "back_image_url",
+        "card_type",
+        "grading_id",
+        "price",
+        "currency",
+        "listing_price_usdc",
+        "insured_value_usd",
+        "listed_at",
+        "listing_updated_at"
+      ],
+      "catalog": [
+        "total",
+        "marketplace_total",
+        "total_pages",
+        "category_counts"
+      ],
+      "note": "listing_price_usdc is the live cent-denominated listing amount mirrored by generic price. Returned items have a supported token_standard. Upstream totals, pages, and category counts are computed before SP3ND local eligibility filtering and may exceed items.length. Insured value and timestamps are informational; createPartnerCart refetches the asset and establishes the authoritative quote."
+    },
+    "paidMeaning": "SP3ND treasury receipt confirmed; provider purchase and wallet delivery remain pending.",
+    "fulfillmentStatuses": [
+      "awaiting_payment",
+      "pending_acquisition",
+      "review_required",
+      "delivered"
+    ],
+    "queueMeaning": "After confirmed payment, pending_acquisition means a server-only job is queued for SP3ND's manual operations team to purchase the exact card and transfer it to the fixed buyer wallet. No automatic purchase or transfer occurs; queueing is not delivery.",
+    "availabilityRisk": "The listing may sell or change before SP3ND purchases it, requiring manual handling and potentially a refund.",
+    "searchAndQuotesAccess": "all_authenticated_approved_partners",
+    "partnerOptInRequired": false,
+    "discoveryCapabilityField": "getAgentStatus.agent.collector_crypt_enabled",
+    "discoveryCapabilityMeaning": "Derived true after normal approved-Partner authentication, not a stored setting.",
+    "fulfillmentMode": "manual",
+    "requiresManualFulfillment": true,
+    "fulfillmentEvidence": "Confirmed transaction references plus authorized operator attestations; delivery also checks current asset ownership. These checks do not cryptographically prove that a referenced transaction caused the specific purchase or asset transfer.",
+    "payAgentOrderSupported": false
+  },
+  "paymentSurfaces": {
+    "collectorCryptPartnerPayment": {
+      "endpoint": "/partnerPayment",
+      "method": "POST",
+      "actions": [
+        "prepare",
+        "submit"
+      ],
+      "description": "Collector Crypt wallet payment is available to approved Partners without separate opt-in. Prepare one immutable, expiry-bound transaction, sign its exact bytes with payer_address, submit only that exact signed serialization, and poll the order. Confirmed USDC payment queues manual purchase and wallet delivery by SP3ND; Paid is not delivery.",
+      "prepareIdempotency": "An unchanged safe replay returns the same unsigned_transaction_base64 with idempotent_replay=true.",
+      "submitIdempotency": "On an unknown outcome, read the order and retry only the identical signed_transaction_base64. Never rebuild, re-sign, or prepare a replacement while unknown.",
+      "facilitator": false
+    }
+  }
 }

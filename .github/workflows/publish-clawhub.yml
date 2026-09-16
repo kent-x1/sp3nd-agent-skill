@@ -8,6 +8,13 @@ on:
       - 'agent-card.json'
       - 'README.md'
       - 'clawhub.json'
+      - '.env.example'
+      - 'scripts/**'
+      - 'references/**'
+      - 'tests/**'
+      - 'publish/**'
+      - '.well-known/skills/default/**'
+      - '.github/workflows/publish-clawhub.yml'
   workflow_dispatch:
 
 jobs:
@@ -18,12 +25,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Validate release artifacts and payment examples
+        run: node --test tests/*.test.mjs
       - name: Install ClawHub CLI
         run: npm install -g clawhub
       - name: Stage publish directory
         run: |
+          mkdir -p publish/scripts
+          mkdir -p publish/references
+          cp SKILL.md publish/SKILL.md
+          cp README.md publish/README.md
           cp clawhub.json publish/clawhub.json
           cp agent-card.json publish/agent-card.json
+          cp .env.example publish/.env.example
+          cp scripts/x402-pay-with-memo.mjs publish/scripts/x402-pay-with-memo.mjs
+          cp references/collector-crypt.md publish/references/collector-crypt.md
       - name: Publish skill
         env:
           CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
@@ -31,6 +47,6 @@ jobs:
           clawhub login --token "$CLAWHUB_TOKEN" --no-browser
           clawhub publish ./publish \
             --slug sp3nd \
-            --name "SP3ND — Buy from Amazon & eBay with USDC" \
+            --name "SP3ND — Shop products and Collector Crypt cards with USDC" \
             --version $(node -p "require('./agent-card.json').version") \
-            --tags "latest,solana,usdc,amazon,ebay,x402,shopping,ecommerce"
+            --tags "latest,solana,usdc,amazon,ebay,collectorcrypt,cards,nft,x402,shopping,ecommerce"

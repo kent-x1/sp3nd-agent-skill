@@ -1,8 +1,8 @@
 ---
 name: sp3nd
-description: Purchase physical products through SP3ND with USDC on Solana. Use this skill to register an agent, create server-priced carts, place idempotent orders, handle manual-review and shipping-quote lifecycles, pay payment-ready orders through x402, and track fulfillment.
+description: Purchase shipped products and tokenized Collector Crypt cards through SP3ND with USDC on Solana. Use for product links, live pricing, idempotent orders, payment, and fulfillment tracking. Collector Crypt purchases use wallet delivery with manual acquisition and transfer by SP3ND.
 metadata:
-  version: 1.8.0
+  version: 1.11.0
   openclaw:
     requires:
       env:
@@ -22,7 +22,17 @@ metadata:
 
 # SP3ND Agent Purchasing
 
-SP3ND is a purchasing agent that accepts stablecoins and completes supported purchases in fiat. This skill describes the production Agent API contract, including asynchronous pricing and manual review.
+SP3ND accepts stablecoins for shipped products and tokenized Collector Crypt cards. This skill describes the production Agent API contract, including asynchronous pricing and manual fulfillment.
+
+Choose the payment flow by product type before checkout:
+
+| Purchase | Payment flow | Fulfillment |
+|---|---|---|
+| Collector Crypt card | `partnerPayment`: prepare, sign the exact transaction, submit | SP3ND manually purchases the exact card and transfers it to the paying wallet |
+| Shipped products through the existing agentic x402 integration | `payAgentOrder` | Physical shipping |
+| Shipped products through the normal Partner API integration | `createPartnerTransaction` | Physical shipping |
+
+For Collector Crypt, read [Collector Crypt checkout](references/collector-crypt.md) before creating the cart or signing a payment. Both `payAgentOrder` and `createPartnerTransaction` reject real card orders with `COLLECTOR_CRYPT_PAYMENT_METHOD_UNSUPPORTED`; do not fall back to either endpoint. Normal approved API credentials work without a separate Collector Crypt opt-in.
 
 ## Base URL and authentication
 
@@ -46,11 +56,15 @@ Keep both credentials and the agent wallet private. Never log or commit secrets 
 3. **Only pay when `payment_ready === true`.** Canonical current orders also report `pricing_status: "ready_for_payment"`. The deprecated `quoted` value may appear on legacy orders, but it is compatibility metadata and never replaces the `payment_ready` gate.
 4. **Never pay an expired quote.** Check `quote_expires_at` immediately before payment and refresh the order if it has expired or is about to expire.
 5. **Use stable idempotency keys.** Reuse the same order key after a timeout or uncertain response. Never generate a new key for a retry of the same intended purchase.
-6. **Use the server's payment requirements.** Amount, asset/currency, `payTo`, memo, and resource come from the HTTP 402 response. Do not calculate or override them.
+6. **Use the server's payment requirements for the selected flow.** Collector Crypt uses the exact transaction and payment fields from `partnerPayment` prepare. Non-card x402 uses the HTTP 402 requirements. Do not calculate or override payment authority, and never combine payment flows.
 7. **Always attribute end-user orders.** Send the end user's Solana address as `user_wallet`. Without it, an order remains partner-attributed and end-user points or history may not be credited.
 8. **Treat order status and pricing status separately.** Fulfillment `status` does not replace `pricing_status`.
+9. **Use one card buyer wallet.** For Collector Crypt, `payer_address`, `user_wallet`, and `asset_recipient_wallet` must be the same valid, on-curve Solana wallet. An agent cannot pay from its own wallet and have SP3ND deliver to a different user wallet. Use the intended recipient's authorized signer; do not substitute a wallet.
+10. **Card payment is not delivery.** A paid Collector Crypt order queues manual acquisition and transfer. Poll for delivery and transfer evidence; do not buy or transfer the card yourself as part of this skill.
 
 ## Lifecycle at a glance
+
+Shipped products:
 
 ```text
 register
@@ -69,8 +83,22 @@ register
   -> track Paid / Ordered / Shipped / Delivered
 ```
 
-Mixed carts and items SP3ND cannot verify automatically remain one order. They are not split by the caller and must not be paid early.
+Mixed shipped-product carts and items SP3ND cannot verify automatically remain one order. They are not split by the caller and must not be paid early.
 An order in `Awaiting Review` must first reach the conceptual **Ready for Payment** state before it can be paid. This state means `payment_ready === true`, the canonical `pricing_status` is `ready_for_payment`, the quote is current, and any required shipping option is selected. A deprecated `quoted` status may remain on legacy orders, but never use it without `payment_ready === true`. Do not transition directly from `Awaiting Review` to `Paid`.
+
+Collector Crypt:
+
+```text
+one canonical card URL (or optional live card search)
+  -> server-priced cart, quantity 1, five-minute quote
+  -> idempotent order with buyer wallet = recipient wallet, no shipping address
+  -> partnerPayment prepare -> verify and sign exact bytes -> submit
+  -> Paid / pending_acquisition: SP3ND manually buys the card
+  -> Ordered / pending_delivery: SP3ND manually transfers the NFT
+  -> Delivered with asset_transfer_signature
+```
+
+Only eligible native-Solana Collector Crypt V2 buy-now listings priced in USDC are supported. Never mix a card with shipped products or another card. A quote does not reserve the listing on Collector Crypt; a sold or changed listing may require review and a refund.
 
 ## 1. Register an agent
 
@@ -117,7 +145,9 @@ X-API-Secret: <api_secret>
 
 Do not send a caller-selected `price` to control the purchase. Any display metadata accepted for compatibility is non-authoritative; SP3ND resolves the listing and computes purchasable values.
 
-Cart totals can still be provisional. In particular, eBay availability and shipping depend on the destination. Always provide the final destination when creating the order.
+For a Collector Crypt card, use exactly one canonical URL such as `https://collectorcrypt.com/assets/solana/<asset-address>` with quantity `1`. Omit shipping/destination fields. SP3ND refetches the listing and obtains its price; no caller-supplied price is accepted as authority. See the [card cart example](references/collector-crypt.md#quote-the-exact-card).
+
+Shipped-product cart totals can still be provisional. In particular, eBay availability and shipping depend on the destination. Always provide the final destination for shipped products when creating the order.
 
 ## 3. Create an idempotent order
 
@@ -153,6 +183,8 @@ Idempotency-Key: checkout_01JSTABLEKEY
 Send the stable key in either the `Idempotency-Key` header or the `idempotency_key` body field. Supplying both with the same value is recommended for broad client compatibility. If both are omitted by a legacy integration, the server falls back to `cart_id`, but new integrations must supply an explicit key.
 
 For eBay, the complete destination is required for the location-aware offer and shipping check. Do not assume a price from a different country, postal code, or eBay TLD remains valid.
+
+For Collector Crypt, omit `shipping_address` and send identical `user_wallet` and `asset_recipient_wallet` values along with `cart_id`, `customer_email`, and the stable idempotency key. The recipient is frozen into the order. See the [card order example](references/collector-crypt.md#create-the-wallet-delivery-order).
 
 ### Schema v2 lifecycle fields
 
@@ -256,9 +288,15 @@ Before payment, confirm:
 - `payment_ready === true`.
 - `pricing_status` is canonically `ready_for_payment`; deprecated `quoted` may appear on legacy orders, but `payment_ready` remains authoritative.
 
-## 6. Pay a payment-ready order with x402
+## 6. Pay on the correct payment flow
 
-Start payment using the canonical order ID:
+### Collector Crypt
+
+Use only `POST /partnerPayment` with `action: "prepare"`, verify and sign the returned transaction, then call the same endpoint with `action: "submit"` and the exact signed serialization. Read the [card payment and retry contract](references/collector-crypt.md#prepare-sign-and-submit-payment) before signing. Do not use the x402 example script for cards.
+
+### Shipped products through x402
+
+For the existing non-card agentic x402 integration, start payment using the canonical order ID:
 
 ```http
 POST /payAgentOrder
@@ -313,13 +351,14 @@ scripts/x402-pay-with-memo.mjs
 
 It must be invoked only after the readiness checks above.
 
-### Manual transaction registration
+### Shipped-product Partner API transaction registration
 
-If a partner uses `POST /createPartnerTransaction`, identify the purchase with:
+Normal Partner API integrations use `POST /createPartnerTransaction` for shipped products. This endpoint rejects Collector Crypt orders. Identify the shipped-product purchase with:
 
 ```json
 {
-  "order_id": "<order_id>"
+  "order_id": "<order_id>",
+  "sender_address": "<payer-solana-wallet>"
 }
 ```
 
@@ -337,13 +376,15 @@ Awaiting Review -> Ready for Payment -> Paid
 
 `Ready for Payment` is the readiness condition defined above, not a substitute for inspecting the schema v2 fields. Verified-only orders may begin in that state without entering review.
 
-Fulfillment after payment:
+Shipped-product fulfillment after payment:
 
 ```text
 Paid -> Ordered -> Shipped -> Delivered
 ```
 
 Do not infer shipment or delivery from payment alone.
+
+Collector Crypt has no physical shipping stage. `Paid` means SP3ND confirmed the USDC payment; `pending_acquisition` means staff still need to purchase the card, and `pending_delivery` means staff still need to transfer it. Complete only when the order reports `status: "Delivered"`, `fulfillment_status: "delivered"`, and `asset_transfer_signature`. If fulfillment needs review or ends unsuccessfully, report that state and let SP3ND handle reconciliation or a refund. See [manual wallet delivery](references/collector-crypt.md#track-manual-wallet-delivery).
 
 ## Retry and idempotency behavior
 
@@ -352,11 +393,12 @@ Do not infer shipment or delivery from payment alone.
 - After a timeout, call `GET /getPartnerOrder` or list orders before retrying.
 - Never create a second cart/order solely because the response was lost.
 - Never pay twice because a settlement response was lost. Read the order first, and stop for manual reconciliation if the API reports `PAYMENT_SETTLEMENT_UNKNOWN`.
+- For a Collector Crypt submit timeout or unknown outcome, preserve the original signed bytes and read the order. Retry only the identical `signed_transaction_base64` when allowed; never rebuild, re-sign, or prepare a replacement while the first outcome is unknown.
 - Do not cache a quote beyond `quote_expires_at`.
 
 ## Marketplace and destination rules
 
-Use a marketplace URL suitable for the recipient's destination, then let SP3ND verify the actual listing.
+For shipped products, use a marketplace URL suitable for the recipient's destination, then let SP3ND verify the actual listing. Collector Crypt uses its canonical Solana asset URL and wallet delivery instead of a physical destination.
 
 ### Amazon storefronts
 
@@ -425,6 +467,8 @@ async function getOrder(orderId) {
 }
 
 async function beginCheckout({ productUrl, userWallet, email, shippingAddress, checkoutKey }) {
+  // The server validates the canonical URL and whether the listing is eligible.
+  const isCard = new URL(productUrl).hostname === 'collectorcrypt.com';
   const cartResult = await json(await fetch(`${BASE_URL}/createPartnerCart`, {
     method: 'POST',
     headers: auth,
@@ -442,7 +486,9 @@ async function beginCheckout({ productUrl, userWallet, email, shippingAddress, c
       idempotency_key: checkoutKey,
       user_wallet: userWallet,
       customer_email: email,
-      shipping_address: shippingAddress,
+      ...(isCard
+        ? { asset_recipient_wallet: userWallet }
+        : { shipping_address: shippingAddress }),
     }),
   }));
 
@@ -451,10 +497,12 @@ async function beginCheckout({ productUrl, userWallet, email, shippingAddress, c
 
 function assertPaymentReady(order) {
   const validPricing = ['ready_for_payment', 'quoted'].includes(order.pricing_status);
-  const unexpired = !order.quote_expires_at ||
-    Date.parse(order.quote_expires_at) > Date.now();
+  const isCard = order.order_type === 'collector_crypt_card';
+  const unexpired = order.quote_expires_at
+    ? Date.parse(order.quote_expires_at) > Date.now()
+    : !isCard;
 
-  if (!order.payment_ready || !validPricing || !unexpired) {
+  if (order.payment_ready !== true || !validPricing || !unexpired) {
     throw new Error('Order is not ready for payment; refresh it instead.');
   }
 
@@ -465,6 +513,18 @@ function assertPaymentReady(order) {
 
 async function requestPayment(order) {
   assertPaymentReady(order);
+  if (order.order_type === 'collector_crypt_card') {
+    return fetch(`${BASE_URL}/partnerPayment`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({
+        action: 'prepare',
+        order_id: order.order_id,
+        payer_address: order.user_wallet,
+      }),
+    });
+  }
+  // Existing agentic x402 integration: shipped products only.
   return fetch(`${BASE_URL}/payAgentOrder`, {
     method: 'POST',
     headers: auth,
@@ -473,9 +533,11 @@ async function requestPayment(order) {
 }
 ```
 
+The example stops before signing. For a card, verify the prepared transaction, sign its exact bytes with the fixed buyer wallet, and submit as described in [Collector Crypt checkout](references/collector-crypt.md). Preparing a payment does not charge the wallet.
+
 ## Operator controls
 
-- Use a dedicated, least-funded wallet for the agent.
+- Use a dedicated, least-funded wallet when the agent is the buyer. For Collector Crypt delivery to an end user, use that same end user's authorized payment signer; do not substitute an agent wallet.
 - Add an application-level approval limit before order creation or payment.
 - Validate the recipient and destination before creating the order.
 - Show review, quote expiry, shipping choice, and total changes to the user.

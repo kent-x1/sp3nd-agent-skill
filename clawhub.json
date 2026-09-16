@@ -1,9 +1,22 @@
 {
   "slug": "sp3nd",
-  "name": "SP3ND — Stablecoin purchasing agent",
-  "description": "Create server-priced physical-goods orders, wait for manual quotes when required, select server-provided shipping options, and pay payment-ready orders with stablecoins through x402.",
-  "version": "1.8.0",
-  "tags": ["solana", "usdc", "amazon", "ebay", "x402", "shopping", "ecommerce", "payments", "crypto"],
+  "name": "SP3ND \u2014 Shop products and Collector Crypt cards with USDC",
+  "description": "Create server-priced Amazon, eBay, and Collector Crypt orders. Pay payment-ready shipped-product orders through x402 or card orders through partnerPayment prepare/submit. SP3ND manually purchases paid cards and transfers the NFT to the buyer wallet.",
+  "version": "1.11.0",
+  "tags": [
+    "solana",
+    "usdc",
+    "amazon",
+    "ebay",
+    "x402",
+    "shopping",
+    "ecommerce",
+    "payments",
+    "crypto",
+    "collectorcrypt",
+    "cards",
+    "nft"
+  ],
   "skill": "SKILL.md",
   "homepage": "https://sp3nd.shop",
   "repository": "https://github.com/kent-x1/sp3nd-agent-skill",
@@ -16,11 +29,11 @@
         "required": true
       },
       "SP3ND_API_SECRET": {
-        "description": "API secret from POST /registerAgent (shown once — save immediately)",
+        "description": "API secret from POST /registerAgent (shown once \u2014 save immediately)",
         "required": true
       },
       "SP3ND_USER_WALLET": {
-        "description": "Optional end-user wallet attribution included on carts and orders",
+        "description": "End-user wallet attribution for carts and orders. For Collector Crypt, user_wallet, asset_recipient_wallet, and the payment signer must be the same wallet.",
         "required": false
       },
       "SOLANA_RPC_URL": {
@@ -34,12 +47,14 @@
     },
     "credentials": {
       "solana_wallet": {
-        "description": "Solana keypair holding USDC — the agent generates this autonomously, then a human funds it",
+        "description": "Solana keypair holding USDC \u2014 the agent generates this autonomously, then a human funds it",
         "type": "file",
         "default_path": ".wallet.json"
       }
     },
-    "config_paths": [".wallet.json"],
+    "config_paths": [
+      ".wallet.json"
+    ],
     "network_access": [
       "https://us-central1-sp3nddotshop-prod.cloudfunctions.net (SP3ND API)",
       "https://api.mainnet-beta.solana.com (Solana RPC)"
@@ -47,6 +62,6 @@
   },
   "security": {
     "autonomous_spending": true,
-    "spending_note": "An agent may submit payment without per-transaction human approval only after SP3ND marks the order payment-ready and returns a current server-authoritative quote and x402 payment requirement. Apply spending limits, preserve idempotency keys, and never retry an uncertain payment without first reading the order."
+    "spending_note": "An agent may submit payment without per-transaction human approval only after SP3ND marks the order payment-ready and returns a current server-authoritative quote and the payment requirements for that order type. Shipped-product agent orders use x402; Collector Crypt requires partnerPayment prepare, exact transaction signing, and submit with the buyer wallet, followed by manual SP3ND acquisition and NFT delivery. Apply spending limits, preserve idempotency keys, and never retry an uncertain payment without first reading the order."
   }
 }

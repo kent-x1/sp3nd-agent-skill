@@ -1,6 +1,4 @@
-scripts/
 .env
-.env.example
 .wallet.json
 .claude/
 .github/

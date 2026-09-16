@@ -1,6 +1,6 @@
 # SP3ND Agent Skill
 
-The SP3ND Agent Skill lets an agent create server-priced physical-goods orders, wait for manual quotes when required, select quoted shipping, pay payment-ready orders with USDC on Solana through x402, and track fulfillment.
+The SP3ND Agent Skill lets an agent buy shipped products and tokenized Collector Crypt cards with USDC on Solana. SP3ND fetches prices, accepts payment, and handles fulfillment. For Collector Crypt, SP3ND staff manually purchase the exact card and transfer the NFT to the paying wallet.
 
 ## Install
 
@@ -8,9 +8,24 @@ The SP3ND Agent Skill lets an agent create server-priced physical-goods orders, 
 npx skills add kent-x1/sp3nd-agent-skill
 ```
 
-The skill follows the [Agent Skills](https://agentskills.io) format and can also be installed by copying `SKILL.md` into an agent's skills directory.
+The skill follows the [Agent Skills](https://agentskills.io) format. For a manual installation, copy `SKILL.md` together with `references/` and `scripts/` into the skill directory so its linked checkout instructions and examples are available. This release is version **1.11.0**; users with older installed copies should update them to discover Collector Crypt checkout.
 
-## Order lifecycle
+## Collector Crypt
+
+Give the agent a canonical `https://collectorcrypt.com/assets/solana/<asset-address>` link, or ask it to search eligible live listings. Approved API credentials work without a separate Collector Crypt opt-in.
+
+```text
+one card URL -> live quote -> wallet-delivery order
+  -> partnerPayment prepare -> buyer signs exact bytes -> submit
+  -> confirmed USDC payment to SP3ND
+  -> manual purchase -> manual NFT transfer -> Delivered
+```
+
+One card per order, quantity `1`, with no shipping address. Quotes last five minutes. The payer and NFT recipient must be the same wallet; paying from an agent wallet means the NFT is delivered to that agent wallet. The listing is not reserved on Collector Crypt, so an unavailable card may require review and a refund.
+
+Read [Collector Crypt checkout](references/collector-crypt.md) for request examples, transaction verification, exact-byte retries, and manual delivery tracking. Card payments use only `partnerPayment`; the x402 helper and `createPartnerTransaction` do not support cards. `Paid` confirms receipt of USDC, not NFT delivery.
+
+## Shipped-product lifecycle
 
 ```text
 product URL + quantity
@@ -32,7 +47,9 @@ SP3ND is authoritative for listing data and all monetary fields. Agents submit p
 
 For end-user purchases, send `user_wallet` so order history and points are attributed to the correct wallet.
 
-## Reference payment example
+## Shipped-product x402 example
+
+This existing example is for non-card orders only. Use the [Collector Crypt flow](references/collector-crypt.md) for tokenized cards.
 
 Install the example dependencies:
 
